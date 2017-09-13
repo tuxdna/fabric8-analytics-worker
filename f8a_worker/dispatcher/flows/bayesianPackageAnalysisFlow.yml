@@ -1,7 +1,8 @@
 ---
   flow-definitions:
-    - name: 'bayesianPackageAnalysisFlow'
-      queue: '{DEPLOYMENT_PREFIX}_ingestion_bayesianPackageAnalysisFlow_v0'
+    - &bayesianPackageAnalysisFlow
+      name: 'bayesianPackageAnalysisFlow'
+      queue: '{DEPLOYMENT_PREFIX}_{WORKER_ADMINISTRATION_REGION}_bayesianPackageAnalysisFlow_v0'
       sampling:
         name: 'constant'
         args:
@@ -13,24 +14,25 @@
             name: 'isGhRepo'
             args:
               key: 'url'
-
         - from:
           to: 'GitReadmeCollectorTask'
           condition:
             <<: *isGhRepoCheck
-
-        - from: 'GitReadmeCollectorTask'
-          to: 'package_keywords_tagging'
-          condition:
-            name: 'argsFieldEqual'
-            args:
-              key: 'ecosystem'
-              value: 'pypi'
-
+        - from:
+          to: 'RepositoryDescCollectorTask'
+          condition: &repositoryDescCollectorCheck
+            or:
+              - name: 'argsFieldEqual'
+                args:
+                  key: 'ecosystem'
+                  value: 'pypi'
+              - name: 'argsFieldEqual'
+                args:
+                  key: 'ecosystem'
+                  value: 'npm'
         - from:
           to: 'git_stats'
           condition:
             <<: *isGhRepoCheck
-
         - from:
           to: 'libraries_io'

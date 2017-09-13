@@ -1,4 +1,4 @@
-FROM registry.devshift.net/fabric8-analytics/f8a-worker-base:fbc1d8b
+FROM registry.devshift.net/fabric8-analytics/f8a-worker-base:4a22b88
 
 ENV LANG=en_US.UTF-8 \
     # place where to download & unpack artifacts
@@ -34,6 +34,11 @@ RUN cd /tmp/f8a_worker && pip3 install .
 # Make sure there are no root-owned files and directories in the home directory,
 # as this directory can be used by non-root user at runtime.
 RUN find ${HOME} -mindepth 1 -delete
+
+# A temporary hack to keep tagger up2date
+# Do not move this line before HOME clean up, we need downloaded external data baked in resulting image.
+COPY hack/install_tagger.sh /tmp/
+RUN sh /tmp/install_tagger.sh
 
 # Not-yet-upstream-released patches
 RUN mkdir -p /tmp/install_deps/patches/
