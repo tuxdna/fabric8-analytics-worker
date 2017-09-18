@@ -198,6 +198,7 @@ class MercatorTask(BaseTask):
                        'summary': [],
                        'details': []}
         mercator_target = arguments.get('cache_sources_path', cache_path)
+
         if arguments['ecosystem'] == 'go':
             tc = TimedCommand(['gofedlib-cli', '--dependencies-main', '--dependencies-packages', mercator_target])
             status, data, err = tc.run(timeout=timeout)
