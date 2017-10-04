@@ -246,7 +246,7 @@ class NugetReleasesFetcher(ReleasesFetcher):
         page = get(nuget_packages_url + package)
         page = BeautifulSoup(page.text, 'html.parser')
         version_history = page.find(class_="version-history")
-        for version in version_history.find_all(href=re.compile('^' + nuget_packages_url)):
+        for version in version_history.find_all(href=re.compile('/packages/')):
             version_text = version.text.replace('(current version)', '').strip()
             try:
                 semver_version.coerce(version_text)
@@ -423,6 +423,17 @@ class PypiDependencyParser(DependencyParser):
                 else:
                     raise ValueError('%r must not be used with %r' % (spec.operator, spec.version))
                 return [('>=', spec.version), ('<', '.'.join(version))]
+            # Trailing .* is permitted per
+            # https://www.python.org/dev/peps/pep-0440/#version-matching
+            elif spec.operator == '==' and spec.version.endswith('.*'):
+                try:
+                    result = check_output(['/usr/bin/semver-ranger', spec.version],
+                                          universal_newlines=True).strip()
+                    gte, lt = result.split()
+                    return [('>=', gte.lstrip('>=')), ('<', lt.lstrip('<'))]
+                except ValueError:
+                    logger.info("couldn't resolve ==%s", spec.version)
+                    return spec.operator, spec.version
             # https://www.python.org/dev/peps/pep-0440/#arbitrary-equality
             # Use of this operator is heavily discouraged, so just convert it to 'Version matching'
             elif spec.operator == '===':
@@ -431,7 +442,8 @@ class PypiDependencyParser(DependencyParser):
                 return spec.operator, spec.version
 
         def _get_pip_spec(requirements):
-            "In Pip 8+ there's no `specs` field and we have to dig the information from the `specifier` field"
+            '''In Pip 8+ there's no `specs` field and we have to dig the
+            information from the `specifier` field'''
             if hasattr(requirements, 'specs'):
                 return requirements.specs
             elif hasattr(requirements, 'specifier'):
@@ -554,6 +566,7 @@ class NpmDependencyParser(DependencyParser):
             result.append(Dependency(name, specs))
 
         return result
+
 
 RubyGemsDependencyParser = NpmDependencyParser
 

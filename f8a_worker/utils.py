@@ -21,15 +21,14 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy import desc
 
-from f8a_worker.conf import get_configuration
+from f8a_worker.defaults import configuration
 from f8a_worker.errors import TaskError
 from f8a_worker.models import (Analysis, Ecosystem, Package, Version,
-                             PackageGHUsage, ComponentGHUsage, DownstreamMap)
+                               PackageGHUsage, ComponentGHUsage, DownstreamMap)
 
 from selinon import StoragePool
 
 logger = logging.getLogger(__name__)
-configuration = get_configuration()
 
 
 def get_package_dependents_count(ecosystem_backend, package, db_session=None):
@@ -192,9 +191,11 @@ class TimedCommand(object):
     def run(self, timeout=None, is_json=False, **kwargs):
         """Run the self.command and wait up to given time period for results.
 
-        :param timeout: how long to wait, in seconds, for the command to finish before terminating it
+        :param timeout: how long to wait, in seconds, for the command to finish
+        before terminating it
         :param is_json: hint whether output of the command is a JSON
-        :return: triplet (return code, stdout, stderr), stdout will be a dictionary if `is_json` is True
+        :return: triplet (return code, stdout, stderr), stdout will be a
+        dictionary if `is_json` is True
         """
         logger.debug("running command '%s'; timeout '%s'", self.command, timeout)
 
@@ -204,7 +205,7 @@ class TimedCommand(object):
                 self.process = Popen(self.command, universal_newlines=True, **kwargs)
                 self.output, self.error = self.process.communicate()
                 self.status = self.process.returncode
-            except:
+            except Exception:
                 self.output = {} if is_json else []
                 self.error = format_exc()
                 self.status = -1
@@ -226,7 +227,8 @@ class TimedCommand(object):
 
         # timeout reached, terminate the thread
         if thread.is_alive():
-            logger.error('Command {cmd} timed out after {t} seconds'.format(cmd=self.command, t=timeout))
+            logger.error('Command {cmd} timed out after {t} seconds'.format(cmd=self.command,
+                                                                            t=timeout))
             # this is tricky - we need to make sure we kill the process with all its subprocesses;
             #  using just kill might create zombie process waiting for subprocesses to finish
             #  and leaving us hanging on thread.join()
@@ -472,7 +474,8 @@ class MavenCoordinates(object):
         elif ncolons == 3:
             a['groupId'], a['artifactId'], a['packaging'], a['version'] = coordinates_str.split(':')
         elif ncolons == 4:
-            a['groupId'], a['artifactId'], a['packaging'], a['classifier'], a['version'] = coordinates_str.split(':')
+            a['groupId'], a['artifactId'], a['packaging'], a['classifier'], a['version'] = \
+                coordinates_str.split(':')
         else:
             raise ValueError('Invalid Maven coordinates %s', coordinates_str)
 
@@ -499,7 +502,7 @@ class MavenCoordinates(object):
 
 def get_latest_upstream_details(ecosystem, package):
     """Returns dict representation of Anitya project"""
-    url = configuration.anitya_url + '/api/by_ecosystem/{e}/{p}'.\
+    url = configuration.ANITYA_URL + '/api/by_ecosystem/{e}/{p}'.\
         format(e=ecosystem, p=package)
 
     res = requests.get(url)
@@ -558,7 +561,7 @@ class DownstreamMapCache(object):
             self.session.rollback()
             try:
                 self._update(key, value)
-            except:
+            except Exception:
                 raise
             else:
                 pass
@@ -658,7 +661,8 @@ def case_sensitivity_transform(ecosystem, name):
     return name
 
 
-def get_session_retry(retries=3, backoff_factor=0.2, status_forcelist=(404, 500, 502, 504), session=None):
+def get_session_retry(retries=3, backoff_factor=0.2, status_forcelist=(404, 500, 502, 504),
+                      session=None):
     session = session or requests.Session()
     retry = Retry(total=retries, read=retries, connect=retries,
                   backoff_factor=backoff_factor, status_forcelist=status_forcelist)

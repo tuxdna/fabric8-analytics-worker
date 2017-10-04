@@ -1,7 +1,8 @@
 """
 Extracts ecosystem specific information and transforms it to a common scheme
 
-Scans the cache path for manifest files (package.json, setup.py, *.gemspec, *.jar, Makefile etc.) to extract meta data and transform it a common scheme.
+Scans the cache path for manifest files (package.json, setup.py, *.gemspec,
+*.jar, Makefile etc.) to extract meta data and transform it a common scheme.
 
 Output: information such as: homepage, bug tracking, dependencies
 
@@ -28,13 +29,13 @@ import shutil
 import json
 from itertools import chain
 
-from f8a_worker.enums import EcosystemBackend
-from f8a_worker.utils import TimedCommand
-from f8a_worker.data_normalizer import DataNormalizer
-from f8a_worker.schemas import SchemaRef
 from f8a_worker.base import BaseTask
+from f8a_worker.data_normalizer import DataNormalizer
+from f8a_worker.enums import EcosystemBackend
 from f8a_worker.object_cache import ObjectCache
 from f8a_worker.process import Git
+from f8a_worker.schemas import SchemaRef
+from f8a_worker.utils import TimedCommand, tempdir
 
 
 # TODO: we need to unify the output from different ecosystems
@@ -49,12 +50,12 @@ class MercatorTask(BaseTask):
         requires = []
         try:
             with open(path, 'r') as f:
-                for l in f.readlines():
-                    l = l.strip()
-                    if l.startswith('['):
+                for line in f.readlines():
+                    line = line.strip()
+                    if line.startswith('['):
                         # the first named ini-like [section] ends the runtime requirements
                         break
-                    elif l:
+                    elif line:
                         requires.append(l)
         except Exception as e:
             self.log.warning('Failed to process "{p}": {e}'.format(p=path, e=str(e)))
@@ -97,7 +98,7 @@ class MercatorTask(BaseTask):
                         # if item is in .egg-info and current pkg_info is not
                         pkg_info = item
                     elif not (item_in_egg or pkg_info_in_egg) and is_deeper(pkg_info, item):
-                        # if none of them are in .egg-info, but current pkg_info is deeer
+                        # if none of them are in .egg-info, but current pkg_info is deeper
                         pkg_info = item
             elif item['ecosystem'] == 'Python-RequirementsTXT' and is_deeper(pkg_info, item):
                 requirements_txt = item
@@ -170,12 +171,11 @@ class MercatorTask(BaseTask):
     def run_mercator_on_git_repo(self, arguments):
         self._strict_assert(arguments.get('url'))
 
-        workdir = None
-        try:
-            workdir = tempfile.mkdtemp()
+        with tempdir() as workdir:
             repo_url = arguments.get('url')
             repo = Git.clone(repo_url, path=workdir, depth=str(1))
-            metadata = self.run_mercator(arguments, workdir, keep_path=True, outermost_only=False, timeout=900)
+            metadata = self.run_mercator(arguments, workdir,
+                                         keep_path=True, outermost_only=False, timeout=900)
             if metadata.get('status', None) != 'success':
                 self.log.error('Mercator failed on %s', repo_url)
                 return None
@@ -189,11 +189,9 @@ class MercatorTask(BaseTask):
                 detail['path'] = head + path
 
             return metadata
-        finally:
-            if workdir:
-                shutil.rmtree(workdir)
 
-    def run_mercator(self, arguments, cache_path, keep_path=False, outermost_only=True, timeout=300):
+    def run_mercator(self, arguments, cache_path,
+                     keep_path=False, outermost_only=True, timeout=300, resolve_poms=True):
         result_data = {'status': 'unknown',
                        'summary': [],
                        'details': []}
@@ -239,6 +237,7 @@ class MercatorTask(BaseTask):
                 #  source of information and don't want to duplicate info by including
                 #  data from pom included in artifact (assuming it's included)
                 items = [data for data in items if data['ecosystem'].lower() == 'java-pom']
-        result_data['details'] = [self._data_normalizer.handle_data(data, keep_path=keep_path) for data in items]
+        result_data['details'] = [self._data_normalizer.handle_data(data, keep_path=keep_path)
+                                  for data in items]
         result_data['status'] = 'success'
         return result_data

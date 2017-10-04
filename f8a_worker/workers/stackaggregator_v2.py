@@ -10,17 +10,20 @@ import json
 import datetime
 
 from f8a_worker.base import BaseTask
-from f8a_worker.graphutils import GREMLIN_SERVER_URL_REST, LICENSE_SCORING_URL_REST, select_latest_version
+from f8a_worker.graphutils import (GREMLIN_SERVER_URL_REST, LICENSE_SCORING_URL_REST,
+                                   select_latest_version)
 from f8a_worker.utils import get_session_retry
 
 
 def extract_component_details(component):
     github_details = {
-        "dependent_projects": component.get("package", {}).get("libio_dependents_projects", [-1])[0],
+        "dependent_projects":
+            component.get("package", {}).get("libio_dependents_projects", [-1])[0],
         "dependent_repos": component.get("package", {}).get("libio_dependents_repos", [-1])[0],
         "total_releases": component.get("package", {}).get("libio_total_releases", [-1])[0],
         "latest_release_duration":
-            str(datetime.datetime.fromtimestamp(component.get("package", {}).get("libio_latest_release", [1496302486.0])[0])),
+            str(datetime.datetime.fromtimestamp(component.get("package", {}).get(
+                "libio_latest_release", [1496302486.0])[0])),
         "first_release_date": "Apr 16, 2010",
         "issues": {
             "month": {
@@ -57,7 +60,8 @@ def extract_component_details(component):
 
     code_metrics = {
         "code_lines": component.get("version", {}).get("cm_loc", [-1])[0],
-        "average_cyclomatic_complexity": component.get("version", {}).get("cm_avg_cyclomatic_complexity", [-1])[0],
+        "average_cyclomatic_complexity":
+            component.get("version", {}).get("cm_avg_cyclomatic_complexity", [-1])[0],
         "total_files": component.get("version", {}).get("cm_num_files", [-1])[0]
     }
 
@@ -73,8 +77,9 @@ def extract_component_details(component):
     name = component.get("version", {}).get("pname", [""])[0]
     version = component.get("version", {}).get("version", [""])[0]
     ecosystem = component.get("version", {}).get("pecosystem", [""])[0]
-    latest_version = select_latest_version(component.get("package", {}).get("libio_latest_version", [""])[0],
-                                           component.get("package", {}).get("latest_version", [""])[0])
+    latest_version = select_latest_version(
+        component.get("package", {}).get("libio_latest_version", [""])[0],
+        component.get("package", {}).get("latest_version", [""])[0])
     component_summary = {
         "ecosystem": ecosystem,
         "name": name,
@@ -90,6 +95,7 @@ def extract_component_details(component):
 
     return component_summary
 
+
 def perform_license_analysis(license_score_list, dependencies):
     license_url = LICENSE_SCORING_URL_REST + "/api/v1/stack_license"
 
@@ -97,30 +103,33 @@ def perform_license_analysis(license_score_list, dependencies):
         "packages": license_score_list
     }
 
-    flag_stack_license_exception = False
-    resp = {}
-    try:
-        license_req = get_session_retry().post(license_url, data=json.dumps(payload))
-        resp = license_req.json()
-    except:
-        flag_stack_license_exception = True
-
     stack_license = []
     stack_license_status = None
     license_conflict_packages = {}
-    if not flag_stack_license_exception:
-        list_components = resp.get('packages', [])
-        for comp in list_components:  # output from license analysis
-            for dep in dependencies:  # the known dependencies
-                if dep.get('name', '') == comp.get('package', '') and \
-                                dep.get('version', '') == comp.get('version', ''):
-                    dep['license_analysis'] = comp.get('license_analysis', {})
 
-        _stack_license = resp.get('stack_license', None)
-        if _stack_license is not None:
-            stack_license = [_stack_license]
-        stack_license_status = resp.get('status', None)
-        license_conflict_packages = {}
+    try:
+        license_req = get_session_retry().post(license_url, data=json.dumps(payload))
+        resp = license_req.json()
+    except Exception:
+        output = {
+            "status": stack_license_status,
+            "f8a_stack_licenses": stack_license,
+            "conflict_packages": license_conflict_packages
+        }
+        return output, dependencies
+
+    list_components = resp.get('packages', [])
+    for comp in list_components:  # output from license analysis
+        for dep in dependencies:  # the known dependencies
+            if dep.get('name', '') == comp.get('package', '') and \
+                            dep.get('version', '') == comp.get('version', ''):
+                dep['license_analysis'] = comp.get('license_analysis', {})
+
+    _stack_license = resp.get('stack_license', None)
+    if _stack_license is not None:
+        stack_license = [_stack_license]
+    stack_license_status = resp.get('status', None)
+    license_conflict_packages = {}
 
     output = {
         "status": stack_license_status,
@@ -128,6 +137,7 @@ def perform_license_analysis(license_score_list, dependencies):
         "conflict_packages": license_conflict_packages
     }
     return output, dependencies
+
 
 def aggregate_stack_data(stack, manifest_file, ecosystem, deps, manifest_file_path):
     dependencies = []
@@ -181,13 +191,19 @@ class StackAggregatorV2Task(BaseTask):
         # Hardcoded ecosystem
         result = []
         for elem in resolved:
-            qstring = "g.V().has('pecosystem','"+ecosystem+"').has('pname','"+elem["package"]+"')." \
-                      "has('version','"+elem["version"]+"')." \
-                      "as('version').in('has_version').as('package').select('version','package').by(valueMap());"
+            if elem["package"] is None or elem["version"] is None:
+                self.log.warning("Either component name or component version is missing")
+                continue
+
+            qstring = "g.V().has('pecosystem','" + ecosystem + "').has('pname','" + \
+                      elem["package"] + "').has('version','" + elem["version"] + "')." \
+                      "as('version').in('has_version').as('package').select('version','package')." \
+                      "by(valueMap());"
             payload = {'gremlin': qstring}
 
             try:
-                graph_req = get_session_retry().post(GREMLIN_SERVER_URL_REST, data=json.dumps(payload))
+                graph_req = get_session_retry().post(GREMLIN_SERVER_URL_REST,
+                                                     data=json.dumps(payload))
 
                 if graph_req.status_code == 200:
                     graph_resp = graph_req.json()
@@ -200,7 +216,7 @@ class StackAggregatorV2Task(BaseTask):
                 else:
                     self.log.error("Failed retrieving dependency data.")
                     continue
-            except:
+            except Exception:
                 self.log.error("Error retrieving dependency data.")
                 continue
 
@@ -210,7 +226,7 @@ class StackAggregatorV2Task(BaseTask):
         finished = []
         stack_data = []
         aggregated = self.parent_task_result('GraphAggregatorTask')
-        
+
         for result in aggregated['result']:
             resolved = result['details'][0]['_resolved']
             ecosystem = result['details'][0]['ecosystem']
@@ -219,7 +235,7 @@ class StackAggregatorV2Task(BaseTask):
 
             finished = self._get_dependency_data(resolved, ecosystem)
             if finished is not None:
-                stack_data.append(aggregate_stack_data(finished, manifest, ecosystem.lower(), resolved, manifest_file_path))
+                stack_data.append(aggregate_stack_data(finished, manifest, ecosystem.lower(),
+                                  resolved, manifest_file_path))
 
         return {"stack_data": stack_data}
-
