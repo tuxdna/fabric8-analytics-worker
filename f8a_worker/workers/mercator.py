@@ -201,7 +201,7 @@ class MercatorTask(BaseTask):
 
         if arguments['ecosystem'] == 'go':
             tc = TimedCommand(['gofedlib-cli', '--dependencies-main', '--dependencies-packages', mercator_target])
-            status, data, err = tc.run(timeout=timeout)
+            status, data, err = tc.run(timeout=timeout, is_json=True)
         else:
             tc = TimedCommand(['mercator', mercator_target])
             status, data, err = tc.run(timeout=timeout,
@@ -216,8 +216,13 @@ class MercatorTask(BaseTask):
             # TODO: attempt static setup.py parsing with mercator
             items = [self._merge_python_items(mercator_target, data)]
         elif arguments['ecosystem'] == 'go':
-            items = json.loads(data[0])
-            result_data['details']['dependencies'] = list(chain(items.values()))
+            # items = json.loads(data[0])
+            json_data = data
+            deps = []
+            for x in json_data.values():
+                deps.extend(x)
+
+            result_data['details'] = [{'dependencies': deps}]
             self.log.debug('gofedlib found %i dependencies', len(result_data['details']['dependencies']))
             return result_data
         else:
